@@ -1,0 +1,36 @@
+author: Suyash Mathema suyashmathema@gmail.com
+# type: lib
+description: Library for preesu esp32 board
+version: 1.0
+
+name: preesu_modbus
+
+libs_version: ${mos.version}
+modules_version: ${mos.version}
+mongoose_os_version: ${mos.version}
+
+tags:
+  - c
+
+sources:
+  - src
+
+filesystem:
+  - fs
+
+config_schema:
+  - ["board.enable", "b", false, {title: "Pin number, DC only"}]
+  - ["board.input1", "i", 36, {title: "Pin number, DC only"}]
+  - ["board.input2", "i", 39, {title: "Pin number, DC only"}]
+  - ["board.input3", "i", 34, {title: "Pin number, AC(hardware) or DC Type"}]
+  - ["board.input4", "i", 35, {title: "Pin number, AC(hardware) or DC Type"}]
+  - ["board.output1", "i", 32, {title: "Pin number"}]
+  - ["board.output2", "i", 33, {title: "Pin number"}]
+  - ["board.output3", "i", 25, {title: "Pin number"}]
+  - ["board.output4", "i", 26, {title: "Pin number"}]
+
+libs:
+  - origin: https://github.com/mongoose-os-libs/rpc-common
+  - origin: https://github.com/mongoose-os-libs/wifi
+    
+manifest_version: 2019-04-26
