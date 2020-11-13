@@ -1,4 +1,5 @@
-#include "mgos.h"
+#include "preesu_rpc.h"
+
 #include "mgos_rpc.h"
 
 #define INPUT_NUMBER 4
@@ -16,6 +17,7 @@ static void pulse_timer_cb(void* arg) {
     mgos_clear_timer(board.pulse_timer_id[output]);
     board.pulse_timer_id[output] = MGOS_INVALID_TIMER_ID;
     //TODO trigger event PULSE_FINISHED
+    mgos_event_trigger(BOARD_PULSE_FINISHED, (int*)output);
 }
 
 static void rpc_handler_pulse_output(struct mg_rpc_request_info* ri, void* cb_arg,
@@ -44,11 +46,10 @@ static void rpc_handler_pulse_output(struct mg_rpc_request_info* ri, void* cb_ar
     mgos_gpio_write(board.output_pin[output], true);
     mgos_clear_timer(board.pulse_timer_id[output]);
     board.pulse_timer_id[output] = mgos_set_timer(pulse_ms, 0, pulse_timer_cb, (int*)output);
+    mg_rpc_send_responsef(ri, "{output:%d, value: %d}", output, 1);
+    mgos_event_trigger(BOARD_PULSE_STARTED, (int*)output);
 
-    mg_rpc_send_responsef(ri, NULL);
     ri = NULL;
-
-    //TODO Trigger Pulse started event
     (void)cb_arg;
     (void)fi;
 }
@@ -91,7 +92,8 @@ static void rpc_handler_gpio_control(struct mg_rpc_request_info* ri, void* cb_ar
             return;
     }
     mg_rpc_send_responsef(ri, "{output:%d, value: %d}", output, value);
-    //TODO Trigger event output changed
+    mgos_event_trigger(BOARD_OUTPUT_CHANGED, (int*)output);
+
     ri = NULL;
     (void)cb_arg;
     (void)fi;
@@ -111,7 +113,7 @@ static void rpc_handler_gpio_status(struct mg_rpc_request_info* ri, void* cb_arg
                           mgos_gpio_read_out(mgos_sys_config_get_board_output2()) ? 1 : -1,
                           mgos_gpio_read_out(mgos_sys_config_get_board_output3()) ? 1 : -1,
                           mgos_gpio_read_out(mgos_sys_config_get_board_output4()) ? 1 : -1);
-    //TODO Trigger event input status requested
+    mgos_event_trigger(BOARD_INPUT_STATE_REQUESTED, NULL);
     ri = NULL;
     (void)cb_arg;
     (void)fi;
@@ -128,7 +130,7 @@ static void rpc_handler_reset_config(struct mg_rpc_request_info* ri, void* cb_ar
     LOG(LL_INFO, ("Device.ResetConfig rpc called, level:%d", level));
     mgos_config_reset(level);
     mgos_system_restart_after(1000);
-    mg_rpc_send_responsef(ri, NULL);
+    mg_rpc_send_responsef(ri, "{status:%s}", "success");
     ri = NULL;
     (void)cb_arg;
     (void)fi;
@@ -198,7 +200,7 @@ static void rpc_handler_wifi_setup_sta(struct mg_rpc_request_info* ri,
 }
 
 static void reconnect_gsm_timer_cb(void* arg) {
-    //TODO trigger connect gsm
+    mgos_event_trigger(BOARD_GSM_CONNECT, NULL);
     (void)arg;
 }
 
@@ -206,9 +208,29 @@ static void rpc_handler_reset_gsm(struct mg_rpc_request_info* ri, void* cb_arg,
                                   struct mg_rpc_frame_info* fi, struct mg_str args) {
     LOG(LL_INFO, ("Device.ResetGSM rpc called"));
 
-    //TODO trigger disconnect gsm
+    mgos_event_trigger(BOARD_GSM_DISCONNECT, NULL);
     mgos_set_timer(3000, 0, reconnect_gsm_timer_cb, NULL);
-    mg_rpc_send_responsef(ri, NULL);
+    mg_rpc_send_responsef(ri, "{status:%s}", "success");
+    ri = NULL;
+    (void)cb_arg;
+    (void)fi;
+}
+
+static void rpc_handler_telemetry(struct mg_rpc_request_info* ri, void* cb_arg,
+                                  struct mg_rpc_frame_info* fi, struct mg_str args) {
+    LOG(LL_INFO, ("Device.Telemetry rpc called"));
+    mgos_event_trigger(BOARD_TELEMETRY_REQUESTED, NULL);
+    mg_rpc_send_responsef(ri, "{status:%s}", "success");
+    ri = NULL;
+    (void)cb_arg;
+    (void)fi;
+}
+
+static void rpc_handler_attribute(struct mg_rpc_request_info* ri, void* cb_arg,
+                                  struct mg_rpc_frame_info* fi, struct mg_str args) {
+    LOG(LL_INFO, ("Device.Attribute rpc called"));
+    mgos_event_trigger(BOARD_ATTRIBUTE_REQUESTED, NULL);
+    mg_rpc_send_responsef(ri, "{status:%s}", "success");
     ri = NULL;
     (void)cb_arg;
     (void)fi;
@@ -219,6 +241,8 @@ bool mgos_preesu_device_init(void) {
     if (!mgos_sys_config_get_board_enable()) {
         return true;
     }
+
+    mgos_event_register_base(BOARD_EVENT_BASE, "Thingsboard Preesu Event");
 
     board.input_pin[0] = mgos_sys_config_get_board_input1();
     board.input_pin[1] = mgos_sys_config_get_board_input2();
@@ -247,5 +271,7 @@ bool mgos_preesu_device_init(void) {
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.WifiScan", "", rpc_handler_wifi_scan, NULL);
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.SetupSTA", "{enable: %B, ssid: %Q, pass: %Q}", rpc_handler_wifi_setup_sta, NULL);
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.ResetGSM", NULL, rpc_handler_reset_gsm, NULL);
+    mg_rpc_add_handler(mgos_rpc_get_global(), "Device.Telemetry", NULL, rpc_handler_telemetry, NULL);
+    mg_rpc_add_handler(mgos_rpc_get_global(), "Device.Attribute", NULL, rpc_handler_attribute, NULL);
     return true;
 }
