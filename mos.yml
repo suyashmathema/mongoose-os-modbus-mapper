@@ -3,7 +3,7 @@ type: lib
 description: Library for preesu esp32 board
 version: 1.0
 
-name: preesu_modbus
+name: preesu_board
 
 tags:
   - c

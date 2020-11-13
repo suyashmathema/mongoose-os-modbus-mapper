@@ -130,7 +130,7 @@ static void rpc_handler_reset_config(struct mg_rpc_request_info* ri, void* cb_ar
     LOG(LL_INFO, ("Device.ResetConfig rpc called, level:%d", level));
     mgos_config_reset(level);
     mgos_system_restart_after(1000);
-    mg_rpc_send_responsef(ri, "{status:%s}", "success");
+    mg_rpc_send_responsef(ri, "{status:%Q}", "success");
     ri = NULL;
     (void)cb_arg;
     (void)fi;
@@ -186,11 +186,11 @@ static void rpc_handler_wifi_setup_sta(struct mg_rpc_request_info* ri,
                                        struct mg_str args) {
     LOG(LL_INFO, ("Device.SetupSTA rpc called"));
 
-    mgos_sys_config_set_wifi_ap_enable(false);
     if (mgos_conf_parse_sub(mg_mk_str_n(args.p, args.len), mgos_config_schema_wifi_sta(), (void*)mgos_sys_config_get_wifi_sta()) &&
         mgos_sys_config_save_level(&mgos_sys_config, (enum mgos_config_level)MGOS_CONFIG_LEVEL_USER, false, NULL)) {
         LOG(LL_INFO, ("WIFI sta setup success"));
         mg_rpc_send_responsef(ri, "WIFI setup succesful");
+        mgos_sys_config_set_wifi_ap_enable(false);
         mgos_system_restart_after(1000);
     } else {
         mg_rpc_send_errorf(ri, 400, "%s failed", "WIFI setup");
@@ -209,8 +209,8 @@ static void rpc_handler_reset_gsm(struct mg_rpc_request_info* ri, void* cb_arg,
     LOG(LL_INFO, ("Device.ResetGSM rpc called"));
 
     mgos_event_trigger(BOARD_GSM_DISCONNECT, NULL);
-    mgos_set_timer(3000, 0, reconnect_gsm_timer_cb, NULL);
-    mg_rpc_send_responsef(ri, "{status:%s}", "success");
+    mgos_set_timer(5000, 0, reconnect_gsm_timer_cb, NULL);
+    mg_rpc_send_responsef(ri, "{status:%Q}", "success");
     ri = NULL;
     (void)cb_arg;
     (void)fi;
@@ -220,7 +220,7 @@ static void rpc_handler_telemetry(struct mg_rpc_request_info* ri, void* cb_arg,
                                   struct mg_rpc_frame_info* fi, struct mg_str args) {
     LOG(LL_INFO, ("Device.Telemetry rpc called"));
     mgos_event_trigger(BOARD_TELEMETRY_REQUESTED, NULL);
-    mg_rpc_send_responsef(ri, "{status:%s}", "success");
+    mg_rpc_send_responsef(ri, "{status:%Q}", "success");
     ri = NULL;
     (void)cb_arg;
     (void)fi;
@@ -229,14 +229,16 @@ static void rpc_handler_telemetry(struct mg_rpc_request_info* ri, void* cb_arg,
 static void rpc_handler_attribute(struct mg_rpc_request_info* ri, void* cb_arg,
                                   struct mg_rpc_frame_info* fi, struct mg_str args) {
     LOG(LL_INFO, ("Device.Attribute rpc called"));
-    mgos_event_trigger(BOARD_ATTRIBUTE_REQUESTED, NULL);
-    mg_rpc_send_responsef(ri, "{status:%s}", "success");
+    int type = 0;
+    json_scanf(args.p, args.len, ri->args_fmt, &type);
+    mgos_event_trigger(BOARD_ATTRIBUTE_REQUESTED, (int*)type);
+    mg_rpc_send_responsef(ri, "{status:%Q}", "success");
     ri = NULL;
     (void)cb_arg;
     (void)fi;
 }
 
-bool mgos_preesu_device_init(void) {
+bool mgos_preesu_board_init(void) {
     LOG(LL_DEBUG, ("Initializing preesu device"));
     if (!mgos_sys_config_get_board_enable()) {
         return true;
@@ -272,6 +274,6 @@ bool mgos_preesu_device_init(void) {
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.SetupSTA", "{enable: %B, ssid: %Q, pass: %Q}", rpc_handler_wifi_setup_sta, NULL);
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.ResetGSM", NULL, rpc_handler_reset_gsm, NULL);
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.Telemetry", NULL, rpc_handler_telemetry, NULL);
-    mg_rpc_add_handler(mgos_rpc_get_global(), "Device.Attribute", NULL, rpc_handler_attribute, NULL);
+    mg_rpc_add_handler(mgos_rpc_get_global(), "Device.Attribute", "{type: %d}", rpc_handler_attribute, NULL);
     return true;
 }
