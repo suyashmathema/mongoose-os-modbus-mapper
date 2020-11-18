@@ -1,9 +1,16 @@
-#include "preesu_rpc.h"
+#include "preesu_board.h"
 
+#include "mg_rpc_channel_loopback.h"
+#include "mgos_crontab.h"
+#include "mgos_pppos.h"
 #include "mgos_rpc.h"
 
 #define INPUT_NUMBER 4
 #define OUTPUT_NUMBER 4
+
+const char* CRON_RPC_ACTION = "cron_rpc_call";
+
+int conn_retries = 0;
 
 struct board_info {
     int input_pin[INPUT_NUMBER];
@@ -16,7 +23,6 @@ static void pulse_timer_cb(void* arg) {
     mgos_gpio_write(board.output_pin[output], false);
     mgos_clear_timer(board.pulse_timer_id[output]);
     board.pulse_timer_id[output] = MGOS_INVALID_TIMER_ID;
-    //TODO trigger event PULSE_FINISHED
     mgos_event_trigger(BOARD_PULSE_FINISHED, (int*)output);
 }
 
@@ -46,7 +52,7 @@ static void rpc_handler_pulse_output(struct mg_rpc_request_info* ri, void* cb_ar
     mgos_gpio_write(board.output_pin[output], true);
     mgos_clear_timer(board.pulse_timer_id[output]);
     board.pulse_timer_id[output] = mgos_set_timer(pulse_ms, 0, pulse_timer_cb, (int*)output);
-    mg_rpc_send_responsef(ri, "{output:%d, value: %d}", output, 1);
+    mg_rpc_send_responsef(ri, "{output:%d, value: %d}", output + 1, 1);
     mgos_event_trigger(BOARD_PULSE_STARTED, (int*)output);
 
     ri = NULL;
@@ -91,7 +97,7 @@ static void rpc_handler_gpio_control(struct mg_rpc_request_info* ri, void* cb_ar
             ri = NULL;
             return;
     }
-    mg_rpc_send_responsef(ri, "{output:%d, value: %d}", output, value);
+    mg_rpc_send_responsef(ri, "{output:%d, value: %d}", output + 1, value);
     mgos_event_trigger(BOARD_OUTPUT_CHANGED, (int*)output);
 
     ri = NULL;
@@ -200,16 +206,19 @@ static void rpc_handler_wifi_setup_sta(struct mg_rpc_request_info* ri,
 }
 
 static void reconnect_gsm_timer_cb(void* arg) {
-    mgos_event_trigger(BOARD_GSM_CONNECT, NULL);
+    if (mgos_sys_config_get_pppos_enable()) {
+        mgos_pppos_connect(0);
+    }
     (void)arg;
 }
 
 static void rpc_handler_reset_gsm(struct mg_rpc_request_info* ri, void* cb_arg,
                                   struct mg_rpc_frame_info* fi, struct mg_str args) {
     LOG(LL_INFO, ("Device.ResetGSM rpc called"));
-
-    mgos_event_trigger(BOARD_GSM_DISCONNECT, NULL);
-    mgos_set_timer(5000, 0, reconnect_gsm_timer_cb, NULL);
+    if (mgos_sys_config_get_pppos_enable()) {
+        mgos_pppos_disconnect(0);
+        mgos_set_timer(5000, 0, reconnect_gsm_timer_cb, NULL);
+    }
     mg_rpc_send_responsef(ri, "{status:%Q}", "success");
     ri = NULL;
     (void)cb_arg;
@@ -236,6 +245,59 @@ static void rpc_handler_attribute(struct mg_rpc_request_info* ri, void* cb_arg,
     ri = NULL;
     (void)cb_arg;
     (void)fi;
+}
+
+void reconnect_wifi_timer_cb(void* arg) {
+    if (mgos_sys_config_get_wifi_sta_enable()) {
+        mgos_wifi_connect();
+    }
+}
+
+static void net_ev_handler(int ev, void* evd, void* arg) {
+    if (ev == MGOS_NET_EV_IP_ACQUIRED) {
+        conn_retries = 0;
+    } else if (ev == MGOS_NET_EV_DISCONNECTED) {
+        conn_retries++;
+        LOG(LL_DEBUG, ("Net disconnected event, connection retries: %d", conn_retries));
+        if (conn_retries % mgos_sys_config_get_board_conn_max_retry() == 0) {
+            LOG(LL_INFO, ("Max disconnections, reintialize connections"));
+            if (mgos_sys_config_get_pppos_enable()) {
+                mgos_pppos_disconnect(0);
+                mgos_set_timer(15000, 0, reconnect_gsm_timer_cb, NULL);
+            }
+            if (mgos_sys_config_get_wifi_sta_enable()) {
+                mgos_wifi_deinit();
+                mgos_set_timer(15000, 0, reconnect_wifi_timer_cb, NULL);
+            }
+        } else if (conn_retries > mgos_sys_config_get_board_conn_reboot_count()) {
+            LOG(LL_INFO, ("Rebooting system, unable to connect"));
+            if (mgos_sys_config_get_board_conn_auto_reboot()) {
+                mgos_system_restart_after(1000);
+            }
+        }
+    }
+    (void)evd;
+    (void)arg;
+}
+
+static void cron_rpc_call(struct mg_str action, struct mg_str payload, void* userdata) {
+    LOG(LL_INFO, ("RPC called from cron, %.*s", payload.len, payload.p));
+    char* rpc_method = NULL;
+    char* rpc_param = NULL;
+    int scan = json_scanf(payload.p, payload.len, "{ method:%Q, params:%Q }", &rpc_method, &rpc_param);
+    if (scan > 0 && rpc_method != NULL) {
+        struct mg_rpc_call_opts opts = {.dst = mg_mk_str(MGOS_RPC_LOOPBACK_ADDR)};
+        char* fmt = NULL;
+        if (rpc_param != NULL) {
+            fmt = "%s";
+        }
+        mg_rpc_callf(mgos_rpc_get_global(), mg_mk_str(rpc_method), NULL, NULL, &opts, fmt, rpc_param);
+    }
+
+    free(rpc_method);
+    free(rpc_param);
+    (void)action;
+    (void)userdata;
 }
 
 bool mgos_preesu_board_init(void) {
@@ -265,6 +327,9 @@ bool mgos_preesu_board_init(void) {
         mgos_gpio_setup_input(board.input_pin[i], MGOS_GPIO_PULL_UP);
         mgos_gpio_setup_output(board.output_pin[i], false);
     }
+
+    mgos_event_add_group_handler(MGOS_EVENT_GRP_NET, net_ev_handler, NULL);
+    mgos_crontab_register_handler(mg_mk_str(CRON_RPC_ACTION), cron_rpc_call, NULL);
 
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.Pulse", "{output: %d, pulse_ms: %d}", rpc_handler_pulse_output, NULL);
     mg_rpc_add_handler(mgos_rpc_get_global(), "Device.Output", "{output: %d, action: %d}", rpc_handler_gpio_control, NULL);

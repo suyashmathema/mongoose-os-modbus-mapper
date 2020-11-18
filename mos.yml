@@ -10,7 +10,7 @@ tags:
 
 sources:
   - src
-  
+
 includes:
   - include
 
@@ -18,18 +18,25 @@ filesystem:
   - fs
 
 config_schema:
-  - ["board.enable", "b", false, {title: "Pin number, DC only"}]
-  - ["board.input1", "i", 36, {title: "Pin number, DC only"}]
-  - ["board.input2", "i", 39, {title: "Pin number, DC only"}]
-  - ["board.input3", "i", 34, {title: "Pin number, AC(hardware) or DC Type"}]
-  - ["board.input4", "i", 35, {title: "Pin number, AC(hardware) or DC Type"}]
-  - ["board.output1", "i", 32, {title: "Pin number"}]
-  - ["board.output2", "i", 33, {title: "Pin number"}]
-  - ["board.output3", "i", 25, {title: "Pin number"}]
-  - ["board.output4", "i", 26, {title: "Pin number"}]
+  - ["board.enable", "b", false, { title: "Pin number, DC only" }]
+  - ["board.input1", "i", 36, { title: "Pin number, DC only" }]
+  - ["board.input2", "i", 39, { title: "Pin number, DC only" }]
+  - ["board.input3", "i", 34, { title: "Pin number, AC(hardware) or DC Type" }]
+  - ["board.input4", "i", 35, { title: "Pin number, AC(hardware) or DC Type" }]
+  - ["board.output1", "i", 32, { title: "Pin number" }]
+  - ["board.output2", "i", 33, { title: "Pin number" }]
+  - ["board.output3", "i", 25, { title: "Pin number" }]
+  - ["board.output4", "i", 26, { title: "Pin number" }]
+  - ["board.conn_max_retry", "i", 45, { title: "Number of connection retries before connection reset" }]
+  - ["board.conn_auto_reboot", "b", true, { title: "Auto reboot device after reboot count reached" }]
+  - ["board.conn_reboot_count", "i", 1000, { title: "Number of connection retries before device reboot" }]
 
 libs:
   - origin: https://github.com/mongoose-os-libs/rpc-common
+  - origin: https://github.com/mongoose-os-libs/pppos
   - origin: https://github.com/mongoose-os-libs/wifi
-    
+  - origin: https://github.com/mongoose-os-libs/crontab
+  - origin: https://github.com/mongoose-os-libs/rpc-loopback
+  - origin: https://github.com/mongoose-os-libs/rpc-service-cron
+
 manifest_version: 2019-04-26
