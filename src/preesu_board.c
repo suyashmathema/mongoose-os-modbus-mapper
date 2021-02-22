@@ -192,7 +192,7 @@ static void rpc_handler_wifi_setup_sta(struct mg_rpc_request_info* ri,
                                        struct mg_str args) {
     LOG(LL_INFO, ("Device.SetupSTA rpc called"));
 
-    if (mgos_conf_parse_sub(mg_mk_str_n(args.p, args.len), mgos_config_schema_wifi_sta(), (void*)mgos_sys_config_get_wifi_sta()) &&
+    if (mgos_conf_parse_sub(mg_mk_str_n(args.p, args.len), mgos_config_wifi_sta_get_schema(), (void*)mgos_sys_config_get_wifi_sta()) &&
         mgos_sys_config_save_level(&mgos_sys_config, (enum mgos_config_level)MGOS_CONFIG_LEVEL_USER, false, NULL)) {
         LOG(LL_INFO, ("WIFI sta setup success"));
         mg_rpc_send_responsef(ri, "WIFI setup succesful");
